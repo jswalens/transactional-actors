@@ -2167,6 +2167,30 @@
    :static true}
   [] (. clojure.lang.Agent shutdown))
 
+(defmacro behavior [args & body]
+  "Create behavior. A behavior consists of args and a body.
+  It is syntactic sugar for fn."
+  {:added "1.8-transactional-actors"}
+  `(fn ~args ~@body))
+
+(defmacro receive [args & body]
+  "Receive a message, binding args and executing body."
+  {:added "1.8-transactional-actors"}
+  nil)
+
+(defn spawn [behavior & args]
+  "Spawn an actor with the behavior and args."
+  {:added "1.8-transactional-actors"}
+  nil)
+
+(defn become [behavior & args]
+  "In an actor, become a different behavior with args.
+
+  behavior can be :same, in which case the same behavior is kept but
+  with the new arguments."
+  {:added "1.8-transactional-actors"}
+  nil)
+
 (defn ref
   "Creates and returns a Ref with an initial value of x and zero or
   more options (in any order):

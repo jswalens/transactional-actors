@@ -14,19 +14,27 @@
 
 (deftest counter
   (let [counter
-          (behavior [i]
+          (behavior
+            [i]
+            (receive
+              [msg & args]
+              (case msg
+                :inc (become :same (+ i 1))
+                :add (become :same (+ i (first args)))
+                :get (deliver (first args) i))))
+          #_(behavior [i]
             [:inc]
-              (become :self [(+ i 1)])
+              (become :same [(+ i 1)])
             [:add j]
-              (become :self [(+ i j)])
+              (become :same [(+ i j)])
             [:get p]
               (deliver p i))
         test (fn [actor n]
                (let [p (promise)]
                  (send actor :get p)
                  (is (= @p n))))
-        counter1 (spawn counter [0])
-        counter2 (spawn counter [0])]
+        counter1 (spawn counter 0)
+        counter2 (spawn counter 0)]
     (send counter1 :inc)
     (send counter2 :inc)
     (send counter1 :add 5)
@@ -36,31 +44,53 @@
     (test counter2 10)))
 
 (deftest spawn-test
-  (let [beh (behavior []
+  (let [beh (behavior
+              []
+              (receive
+                [msg & args]
+                true))
+            #_(behavior []
               [:ok]
                 true)
-        act (spawn beh [])]
+        act (spawn beh)]
     (is (some? act))))
 
 (deftest send-test
-  (let [beh (behavior []
+  (let [beh (behavior
+              []
+              (receive
+                [msg & args]
+                (deliver (first args) true)))
+            #_(behavior []
               [:deliver p]
                 (deliver p true))
-        act (spawn beh [])
+        act (spawn beh)
         p   (promise)]
     (send act :deliver p)
     (is (true? @p))))
 
 (deftest become-test
-  (let [beh2 (behavior []
+  (let [beh2 (behavior
+               []
+               (receive
+                 [msg & args]
+                 (deliver (first args) 2)))
+             #_(behavior []
                [:deliver p]
                  (deliver p 2))
-        beh1 (behavior []
+        beh1 (behavior
+               []
+               (receive
+                 [msg & args]
+                 (case msg
+                   :deliver (deliver (first args) true)
+                   :become  (become beh2))))
+             #_(behavior []
                [:deliver p]
                  (deliver p 1)
                [:become]
                  (become beh2 []))
-        act (spawn beh1 [])
+        act (spawn beh1)
         p1  (promise)
         p2  (promise)]
     (send act :deliver p1)
