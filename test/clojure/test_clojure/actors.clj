@@ -9,8 +9,29 @@
 ;; Author: Janwillem Swalens
 
 (ns clojure.test-clojure.actors
-  (:use clojure.test)
-  (:import [java.util.concurrent CountDownLatch TimeUnit]))
+  (:use clojure.test))
+
+(def send send-actor) ; TODO: remove this later
+
+(deftest simple
+  (let [p (promise)
+        b (behavior [] (receive [] (deliver p true)))
+        a (spawn b)]
+    (send a)
+    (is (deref p 5000 false))
+    (is (realized? p) "Promise not delivered after 5000 ms.")))
+
+(deftest two-messages
+  (let [p1 (promise)
+        p2 (promise)
+        b (behavior [] (receive [p] (deliver p true)))
+        a (spawn b)]
+    (send a p1)
+    (send a p2)
+    (is (deref p1 3000 false))
+    (is (realized? p1) "Promise 1 not delivered after 3000 ms.")
+    (is (deref p2 3000 false))
+    (is (realized? p2) "Promise 2 not delivered after 3000 ms.")))
 
 (deftest counter
   (let [counter
@@ -32,7 +53,7 @@
         test (fn [actor n]
                (let [p (promise)]
                  (send actor :get p)
-                 (is (= @p n))))
+                 (is (= (deref p 5000 false) n))))
         counter1 (spawn counter 0)
         counter2 (spawn counter 0)]
     (send counter1 :inc)
@@ -67,7 +88,7 @@
         act (spawn beh)
         p   (promise)]
     (send act :deliver p)
-    (is (true? @p))))
+    (is (deref p 5000 false))))
 
 (deftest become-test
   (let [beh2 (behavior
@@ -83,7 +104,7 @@
                (receive
                  [msg & args]
                  (case msg
-                   :deliver (deliver (first args) true)
+                   :deliver (deliver (first args) 1)
                    :become  (become beh2))))
              #_(behavior []
                [:deliver p]
@@ -94,7 +115,7 @@
         p1  (promise)
         p2  (promise)]
     (send act :deliver p1)
-    (is (= @p1 1))
+    (is (= (deref p1 5000 false) 1))
     (send act :become)
     (send act :deliver p2)
-    (is (= @p2 2))))
+    (is (= (deref p2 5000 false) 2))))

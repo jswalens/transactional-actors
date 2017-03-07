@@ -2167,29 +2167,44 @@
    :static true}
   [] (. clojure.lang.Agent shutdown))
 
-(defmacro behavior [args & body]
+(defmacro behavior
   "Create behavior. A behavior consists of args and a body.
   It is syntactic sugar for fn."
   {:added "1.8-transactional-actors"}
+  [args & body]
   `(fn ~args ~@body))
 
-(defmacro receive [args & body]
+(defmacro receive
   "Receive a message, binding args and executing body."
   {:added "1.8-transactional-actors"}
-  nil)
+  [args & body]
+  `(fn ~args ~@body))
 
-(defn spawn [behavior & args]
+(defn spawn
   "Spawn an actor with the behavior and args."
-  {:added "1.8-transactional-actors"}
-  nil)
+  {:added "1.8-transactional-actors"
+   :static true}
+  ([behavior & args]
+   (let [a (new clojure.lang.Actor behavior args)]
+     (.submit clojure.lang.Agent/soloExecutor ^Runnable a) ; TODO or pooledExecutor?
+     a)))
 
-(defn become [behavior & args]
+(defn become
   "In an actor, become a different behavior with args.
 
-  behavior can be :same, in which case the same behavior is kept but
+  behavior can be :same (or nil), in which case the same behavior is kept but
   with the new arguments."
+  {:added "1.8-transactional-actors"
+   :static true}
+  [behavior & args]
+  (let [behavior (if (= behavior :same) nil behavior)]
+    (. clojure.lang.Actor doBecome behavior args)))
+
+(defn send-actor
+  "Send to actor. This will be replaced by send later."
   {:added "1.8-transactional-actors"}
-  nil)
+  [^clojure.lang.Actor actor & args]
+  (.enqueue actor nil args)) ; TODO: fill in current actor
 
 (defn ref
   "Creates and returns a Ref with an initial value of x and zero or
