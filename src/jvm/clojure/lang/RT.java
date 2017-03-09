@@ -190,6 +190,7 @@ final static public Var ERR =
 final static Keyword TAG_KEY = Keyword.intern(null, "tag");
 final static Keyword CONST_KEY = Keyword.intern(null, "const");
 final static public Var AGENT = Var.intern(CLOJURE_NS, Symbol.intern("*agent*"), null).setDynamic();
+final static public Var ACTOR = Var.intern(CLOJURE_NS, Symbol.intern("*actor*"), null).setDynamic();
 static Object readeval = readTrueFalseUnknown(System.getProperty("clojure.read.eval","true"));
 final static public Var READEVAL = Var.intern(CLOJURE_NS, Symbol.intern("*read-eval*"),  readeval).setDynamic();
 final static public Var DATA_READERS = Var.intern(CLOJURE_NS, Symbol.intern("*data-readers*"), RT.map()).setDynamic();
@@ -305,6 +306,8 @@ static{
 	CURRENT_NS.setTag(Symbol.intern("clojure.lang.Namespace"));
 	AGENT.setMeta(map(DOC_KEY, "The agent currently running an action on this thread, else nil"));
 	AGENT.setTag(Symbol.intern("clojure.lang.Agent"));
+	ACTOR.setMeta(map(DOC_KEY, "The actor currently running on this thread, else nil"));
+	ACTOR.setTag(Symbol.intern("clojure.lang.Actor"));
 	MATH_CONTEXT.setTag(Symbol.intern("java.math.MathContext"));
 	Var nv = Var.intern(CLOJURE_NS, NAMESPACE, bootNamespace);
 	nv.setMacro();

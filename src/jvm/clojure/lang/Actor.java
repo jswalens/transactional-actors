@@ -12,6 +12,8 @@
 
 package clojure.lang;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.LinkedBlockingDeque;
 
 // TODO: garbage collection of actors
@@ -31,13 +33,15 @@ public class Actor implements Runnable {
         }
     }
 
+    // TODO or use *actor* ??
     private static final ThreadLocal<Actor> CURRENT_ACTOR = new ThreadLocal<Actor>();
 
-    private IFn oldBehavior; // re-used for (become :same args)
-    private IFn behaviorInstance; // behavior applied to its arguments (state)
+    private IFn behavior; // current behavior, used when actor starts, and re-used for (become :same args)
+    private ISeq args; // arguments to pass to next call to behavior
     private final Inbox inbox = new Inbox();
 
     static class Message {
+        // TODO sender is not used anywhere
         final Actor sender;
         final Actor receiver;
         final ISeq args;
@@ -71,10 +75,9 @@ public class Actor implements Runnable {
 
     private void become(IFn behavior, ISeq args) {
         // TODO: should we check whether we're actually running in this actor?
-        if (behavior == null) // When doing (become :same args), we re-use the old behavior
-            behavior = oldBehavior;
-        behaviorInstance = (IFn) behavior.applyTo(args);
-        oldBehavior = behavior;
+        if (behavior != null) // We allow (become :same args), which re-uses the old behavior
+            this.behavior = behavior;
+        this.args = args;
     }
 
     public void enqueue(Actor sender, ISeq args) throws InterruptedException {
@@ -84,15 +87,29 @@ public class Actor implements Runnable {
 
     public void run() {
         CURRENT_ACTOR.set(this);
-        while (true) {
-            // TODO: end actor when it is no longer needed (garbage collection of actors)
-            Message message;
-            try {
-                message = inbox.take();
-            } catch (InterruptedException ex) {
-                return;
+
+        // Bind *actor* to this
+        Map<Var, Object> m = new HashMap<Var, Object>();
+        m.put(RT.ACTOR, this);
+        IPersistentMap bindings = PersistentArrayMap.create(m);
+        Var.pushThreadBindings(bindings);
+
+        try {
+            while (true) {
+                // TODO: end actor when it is no longer needed (garbage collection of actors)
+                Message message;
+                try {
+                    message = inbox.take();
+                } catch (InterruptedException ex) {
+                    return;
+                }
+                // TODO: if an exception is thrown we don't handle it gracefully.
+                // See error handling in Agent for a better solution.
+                IFn behaviorInstance = (IFn) behavior.applyTo(args);
+                behaviorInstance.applyTo(message.args);
             }
-            behaviorInstance.applyTo(message.args);
+        } finally {
+            Var.popThreadBindings();
         }
     }
 

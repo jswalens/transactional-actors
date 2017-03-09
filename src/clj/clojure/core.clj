@@ -2184,10 +2184,10 @@
   "Spawn an actor with the behavior and args."
   {:added "1.8-transactional-actors"
    :static true}
-  ([behavior & args]
-   (let [a (new clojure.lang.Actor behavior args)]
-     (.submit clojure.lang.Agent/soloExecutor ^Runnable a) ; TODO or pooledExecutor?
-     a)))
+  [behavior & args]
+  (let [a (new clojure.lang.Actor behavior args)]
+    (.submit clojure.lang.Agent/soloExecutor ^Runnable a)
+    a))
 
 (defn become
   "In an actor, become a different behavior with args.
@@ -2204,7 +2204,7 @@
   "Send to actor. This will be replaced by send later."
   {:added "1.8-transactional-actors"}
   [^clojure.lang.Actor actor & args]
-  (.enqueue actor nil args)) ; TODO: fill in current actor
+  (.enqueue actor *actor* args))
 
 (defn ref
   "Creates and returns a Ref with an initial value of x and zero or
@@ -6193,6 +6193,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; var documentation ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (alter-meta! #'*agent* assoc :added "1.0")
+(alter-meta! #'*actor* assoc :added "1.8-transactional-actors")
 (alter-meta! #'in-ns assoc :added "1.0")
 (alter-meta! #'load-file assoc :added "1.0")
 

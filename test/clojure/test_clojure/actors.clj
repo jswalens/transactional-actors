@@ -119,3 +119,18 @@
     (send act :become)
     (send act :deliver p2)
     (is (= (deref p2 5000 false) 2))))
+
+(deftest star-actor-star-test
+  (let [beh (behavior
+              []
+              (receive
+                [self p]
+                (deliver p (= self *actor*))
+                (become :same)))
+        act (spawn beh)
+        p1  (promise)
+        p2  (promise)]
+    (send act act p1)
+    (is (deref p1 5000 false) "*actor* should refer to the current actor")
+    (send act act p2)
+    (is (deref p1 5000 false) "*actor* should refer to the current actor, even after become")))
