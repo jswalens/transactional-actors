@@ -33,7 +33,9 @@ public class Actor implements Runnable {
         }
     }
 
-    // TODO or use *actor* ??
+    // Note: this is duplicated by the dynamic var *actor*, but it's a good idea to keep both:
+    // *actor* should be kept as it's part of the public API;
+    // while this one is faster to access internally (it does not involve a look-up in the thread frame).
     private static final ThreadLocal<Actor> CURRENT_ACTOR = new ThreadLocal<Actor>();
 
     private IFn behavior; // current behavior, used when actor starts, and re-used for (become :same args)
