@@ -11,8 +11,6 @@
 (ns clojure.test-clojure.actors
   (:use clojure.test))
 
-(def send send-actor) ; TODO: remove this later
-
 (deftest simple
   (let [p (promise)
         b (behavior [] (receive [] (deliver p true)))

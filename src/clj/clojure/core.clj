@@ -2017,15 +2017,23 @@
   (.dispatch a (binding [*agent* a] (binding-conveyor-fn f)) args executor))
 
 (defn send
-  "Dispatch an action to an agent. Returns the agent immediately.
-  Subsequently, in a thread from a thread pool, the state of the agent
-  will be set to the value of:
+  "Dispatch an action to an agent or a message to an actor.
+  Returns the agent or actor immediately.
 
-  (apply action-fn state-of-agent args)"
+  In case destination is an actor, the message is put in the actor's inbox.
+
+  In case destination is an agent, in a thread from a thread pool,
+  the state of the agent will be set to the value of:
+
+  (apply (first args) state-of-agent (rest args))"
   {:added "1.0"
    :static true}
-  [^clojure.lang.Agent a f & args]
-  (apply send-via clojure.lang.Agent/pooledExecutor a f args))
+  [destination & args]
+  (if (instance? clojure.lang.Actor destination)
+    (do
+      (.enqueue ^clojure.lang.Actor destination *actor* args)
+      destination)
+    (apply send-via clojure.lang.Agent/pooledExecutor destination (first args) (rest args))))
 
 (defn send-off
   "Dispatch a potentially blocking action to an agent. Returns the
@@ -2199,12 +2207,6 @@
   [behavior & args]
   (let [behavior (if (= behavior :same) nil behavior)]
     (. clojure.lang.Actor doBecome behavior args)))
-
-(defn send-actor
-  "Send to actor. This will be replaced by send later."
-  {:added "1.8-transactional-actors"}
-  [^clojure.lang.Actor actor & args]
-  (.enqueue actor *actor* args))
 
 (defn ref
   "Creates and returns a Ref with an initial value of x and zero or
