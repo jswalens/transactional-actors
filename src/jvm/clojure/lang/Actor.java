@@ -106,8 +106,8 @@ public class Actor implements Runnable {
                 } catch (InterruptedException ex) {
                     return;
                 }
-                // TODO: if an exception is thrown we don't handle it gracefully.
-                // See error handling in Agent for a better solution.
+                // TODO: graceful error handling. Currently, if an exception is thrown we don't handle it, it simply
+                // aborts the actor. See error handling in Agent for a better solution.
                 IFn behaviorInstance = (IFn) behavior.applyTo(args);
                 behaviorInstance.applyTo(message.args);
             }
