@@ -76,7 +76,8 @@ public class Actor implements Runnable {
     }
 
     private void become(IFn behavior, ISeq args) {
-        // TODO: should we check whether we're actually running in this actor?
+        // Note: this always runs in the current actor (so we're never setting the behavior and args of an actor running
+        // in another thread), as become is only called by doBecome on the current actor.
         if (behavior != null) // We allow (become :same args), which re-uses the old behavior
             this.behavior = behavior;
         this.args = args;
