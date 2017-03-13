@@ -2176,17 +2176,10 @@
   [] (. clojure.lang.Agent shutdown))
 
 (defmacro behavior
-  "Create behavior. A behavior consists of args and a body.
-  It is syntactic sugar for fn."
+  "Create behavior. A behavior consists of parameters to the behavior, parameters included in the message, and a body."
   {:added "1.8-transactional-actors"}
-  [args & body]
-  `(fn ~args ~@body))
-
-(defmacro receive
-  "Receive a message, binding args and executing body."
-  {:added "1.8-transactional-actors"}
-  [args & body]
-  `(fn ~args ~@body))
+  [behavior-pars message-pars & body]
+  `(fn ~behavior-pars (fn ~message-pars ~@body)))
 
 (defn spawn
   "Spawn an actor with the behavior and args."
