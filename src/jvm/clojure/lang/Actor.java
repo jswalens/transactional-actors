@@ -47,11 +47,17 @@ public class Actor implements Runnable {
         final Actor sender;
         final Actor receiver;
         final ISeq args;
+        final LockingTransaction dependency; // can be null
 
         public Message(Actor sender, Actor receiver, ISeq args) {
+            this(sender, receiver, args, null);
+        }
+
+        public Message(Actor sender, Actor receiver, ISeq args, LockingTransaction dependency) {
             this.sender = sender;
             this.receiver = receiver;
             this.args = args;
+            this.dependency = dependency;
         }
 
     }
@@ -84,7 +90,7 @@ public class Actor implements Runnable {
     }
 
     public void enqueue(Actor sender, ISeq args) throws InterruptedException {
-        Message message = new Message(sender, this, args);
+        Message message = new Message(sender, this, args, LockingTransaction.getRunning());
         inbox.enqueue(message);
     }
 
