@@ -17,7 +17,10 @@
 ;(defn log [& args]
 ;  (send logger (fn [_] (apply println args))))
 
-; TODO: remove most/all Thread/sleep's from the tests (using promises?).
+(defn- test-with-promise [actor msg expected timeout]
+  (let [p (promise)]
+    (send actor msg p)
+    (is (= (deref p timeout false) expected))))
 
 ; COUNTER: uses transactions
 ; Does not require special changes for the combination of actors and transactions.
@@ -29,9 +32,11 @@
             [i]
             [msg & args]
             (case msg
-              ;:get
-              ;(dosync
-              ;  (log "my sum:" i "- total sum:" @sum))
+              :get
+              (do
+                (dosync
+                  (log "my sum:" i "- total sum:" @sum))
+                (deliver (first args) i))
               :inc
               (dosync
                 (log "my sum:" i "+ 1 - total sum:" @sum "+ 1")
@@ -47,34 +52,27 @@
           counter2 (spawn counter 0)]
       (send counter1 :inc)
       (send counter2 :inc)
+      (test-with-promise counter1 :get 1 1000)
       (send counter1 :add 5)
-      ;(send counter1 :get)
+      (test-with-promise counter1 :get 6 1000)
       (send counter1 :add 4)
       (send counter2 :add 9)
-      ;(send counter2 :get)
-      ;(send counter1 :get)
-      (Thread/sleep 100)
-      ;(send counter1 :get) (Thread/sleep 10)
-      ;(send counter2 :get) (Thread/sleep 10)
-      (is (= 20 @sum))))) ; this succeeds
+      (test-with-promise counter1 :get 10 1000)
+      (test-with-promise counter2 :get 10 1000)
+      (is (= 20 @sum)))))
 
 ; SUMMER: send in transaction
 ; If send is not reverted when a transaction is reverted, its effects remain visible after a rollback.
 (deftest summer-send
   (testing "SUMMER - PROBLEM WITH SEND"
     (let [contentious-ref (ref 0)
-          check-success? (atom :unknown)
           receiver
           (behavior
             [i]
-            [msg]
+            [msg & args]
             (case msg
-              ;:get
-              ;(log "received" i "messages")
-              :check
-              (do
-                (is (= 100 i))
-                (reset! check-success? (= 100 i)))
+              :get
+              (deliver (first args) i)
               :inc
               (become :same (inc i))))
           receiver-actor (spawn receiver 0)
@@ -89,11 +87,7 @@
       (is (= 100 (count senders)))
       (doseq [s senders]
         (send s))
-      (Thread/sleep 1000)
-      ;(send receiver-actor :get) (Thread/sleep 10)
-      (log "expected 100 messages received")
-      (send receiver-actor :check) (Thread/sleep 10)
-      (is (= true @check-success?))))) ; ensure that test actually executed
+      (test-with-promise receiver-actor :get 100 1000))))
 
 ; SUMMER: spawn in transaction
 ; If spawn is not reverted when a transaction is reverted, the new actor remainn active after a rollback.
@@ -106,20 +100,13 @@
             [i]
             [msg & args]
             (case msg
-              ;:get
-              ;(dosync
-              ;  (log "my sum:" i "- total sum:" @sum))
+              :get
+              (deliver (first args) i)
               :inc
               (dosync
                 (log "my sum:" i "+ 1 - total sum:" @sum "+ 1")
                 (alter sum + 1)
-                (become :same (+ i 1)))
-              :add
-              (let [j (first args)]
-                (dosync
-                  (log "my sum:" i "+" j "- total sum:" @sum "+" j)
-                  (alter sum + j)
-                  (become :same (+ i j))))))
+                (become :same (+ i 1)))))
           spawner
           (behavior
             []
@@ -131,19 +118,22 @@
       (is (= 100 (count spawners)))
       (doseq [s spawners]
         (send s))
-      (Thread/sleep 1000)
+      (dotimes [i (count spawners)]
+        (let [s (nth spawners i)
+              timeout (if (= i 0) 1000 20)]
+          (test-with-promise s :get 1 timeout)))
       (is (= 100 @sum)))))
 
 ; FLAGGER: become in transaction
 ; If become is not reverted when a transaction is reverted, the behavior is changed even after a rollback.
 (deftest flagger-become
   (testing "FLAGGER - PROBLEM WITH BECOME"
-    (let [one-flag-set? (ref false)
-          flags-at-the-end (agent [])
+    (let [total 100
+          one-flag-set? (ref false)
           flagger
           (behavior
             [flag]
-            [msg]
+            [msg & args]
             (case msg
               :set-flag
               (dosync
@@ -152,20 +142,25 @@
                   (ref-set one-flag-set? true)))
                 ; else: flag stays false, one-flag-set? stays true
               :read-flag
-              (send flags-at-the-end conj flag))) ; NOT send but to agent
-          flaggers (doall (repeatedly 100 #(spawn flagger false)))]
-      (is (= 100 (count flaggers)))
+              (deliver (first args) flag)))
+          flaggers (doall (repeatedly total #(spawn flagger false)))]
+      (is (= total (count flaggers)))
       (doseq [f flaggers]
         (send f :set-flag))
-      (Thread/sleep 1000)
-      (doseq [f flaggers]
-        (send f :read-flag))
-      (Thread/sleep 1000)
-      (log "flags at the end:" @flags-at-the-end)
-      (let [n (count @flags-at-the-end)
-            t (count (filter true? @flags-at-the-end))
-            f (count (filter false? @flags-at-the-end))]
-        (log "true:" t "/" n "- false:" f "/" n)
-        (is (= 100 n))
+      (let [flags (doall
+                    (for [i (range total)]
+                      (let [f (nth flaggers i)
+                            p (promise)
+                            timeout (if (= i 0) 1000 20)]
+                        (send f :read-flag p)
+                        (deref p timeout nil))))
+            c (count flags)
+            t (count (filter true? flags))
+            f (count (filter false? flags))
+            n (count (filter nil? flags))]
+        ;(log "flags at the end:" flags)
+        (log "true:" t "/" c "- false:" f "/" c  "- nil:" n "/" c)
+        (is (= total c))
         (is (= 1 t))
-        (is (= (- n 1) f))))))
+        (is (= (- total 1) f))
+        (is (= 0 n))))))
