@@ -33,13 +33,26 @@ public class Actor implements Runnable {
         }
     }
 
+    static class Behavior {
+        IFn behaviorBody;
+        ISeq args; // arguments to pass to call to behaviorBody
+
+        public Behavior(IFn behaviorBody, ISeq args) {
+            this.behaviorBody = behaviorBody;
+            this.args = args;
+        }
+
+        public IFn apply() {
+            return (IFn) behaviorBody.applyTo(args);
+        }
+    }
+
     // Note: this is duplicated by the dynamic var *actor*, but it's a good idea to keep both:
     // *actor* should be kept as it's part of the public API;
     // while this one is faster to access internally (it does not involve a look-up in the thread frame).
     private static final ThreadLocal<Actor> CURRENT_ACTOR = new ThreadLocal<Actor>();
 
-    private IFn behavior; // current behavior, used when actor starts, and re-used for (become :same args)
-    private ISeq args; // arguments to pass to next call to behavior
+    private Behavior behavior;
     private final Inbox inbox = new Inbox();
 
     static class Message {
@@ -62,8 +75,8 @@ public class Actor implements Runnable {
 
     }
 
-    public Actor(IFn behavior, ISeq args) {
-        become(behavior, args);
+    public Actor(IFn behaviorBody, ISeq args) {
+        behavior = new Behavior(behaviorBody, args);
     }
 
     static Actor getRunning() {
@@ -77,16 +90,16 @@ public class Actor implements Runnable {
         return a;
     }
 
-    public static void doBecome(IFn behavior, ISeq args) {
-        Actor.getEx().become(behavior, args);
+    public static void doBecome(IFn behaviorBody, ISeq args) {
+        Actor.getEx().become(behaviorBody, args);
     }
 
-    private void become(IFn behavior, ISeq args) {
-        // Note: this always runs in the current actor (so we're never setting the behavior and args of an actor running
-        // in another thread), as become is only called by doBecome on the current actor.
-        if (behavior != null) // We allow (become :same args), which re-uses the old behavior
-            this.behavior = behavior;
-        this.args = args;
+    private void become(IFn behaviorBody, ISeq args) {
+        // Note: this always runs in the current actor (we're never setting the behavior of an actor running in another
+        // thread), as become is only called by doBecome on the current actor.
+        if (behaviorBody != null) // We allow (become :same|nil args), which re-uses the old behavior
+            behavior.behaviorBody = behaviorBody;
+        behavior.args = args;
     }
 
     public void enqueue(Actor sender, ISeq args) throws InterruptedException {
@@ -114,8 +127,7 @@ public class Actor implements Runnable {
                 }
                 // TODO: graceful error handling. Currently, if an exception is thrown we don't handle it, it simply
                 // aborts the actor. See error handling in Agent for a better solution.
-                IFn behaviorInstance = (IFn) behavior.applyTo(args);
-                behaviorInstance.applyTo(message.args);
+                behavior.apply().applyTo(message.args);
             }
         } finally {
             Var.popThreadBindings();
