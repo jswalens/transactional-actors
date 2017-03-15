@@ -56,18 +56,15 @@ public class Actor implements Runnable {
     private final Inbox inbox = new Inbox();
 
     static class Message {
-        // TODO sender is not used anywhere
-        final Actor sender;
         final Actor receiver;
         final ISeq args;
         final LockingTransaction dependency; // can be null
 
-        public Message(Actor sender, Actor receiver, ISeq args) {
-            this(sender, receiver, args, null);
+        public Message(Actor receiver, ISeq args) {
+            this(receiver, args, null);
         }
 
-        public Message(Actor sender, Actor receiver, ISeq args, LockingTransaction dependency) {
-            this.sender = sender;
+        public Message(Actor receiver, ISeq args, LockingTransaction dependency) {
             this.receiver = receiver;
             this.args = args;
             this.dependency = dependency;
@@ -90,20 +87,41 @@ public class Actor implements Runnable {
         return a;
     }
 
-    public static void doBecome(IFn behaviorBody, ISeq args) {
-        Actor.getEx().become(behaviorBody, args);
+    public void start() {
+        LockingTransaction tx = LockingTransaction.getRunning();
+        if (tx != null)
+            tx.spawnActor(this);
+        else
+            Agent.soloExecutor.submit(this);
     }
 
-    private void become(IFn behaviorBody, ISeq args) {
+    public static void doBecome(IFn behaviorBody, ISeq args) {
+        Behavior behavior = new Behavior(behaviorBody, args);
+        LockingTransaction tx = LockingTransaction.getRunning();
+        if (tx != null)
+            tx.become(behavior);
+        else
+            Actor.getEx().become(behavior);
+    }
+
+    void become(Behavior newBehavior) {
         // Note: this always runs in the current actor (we're never setting the behavior of an actor running in another
         // thread), as become is only called by doBecome on the current actor.
-        if (behaviorBody != null) // We allow (become :same|nil args), which re-uses the old behavior
-            behavior.behaviorBody = behaviorBody;
-        behavior.args = args;
+        if (newBehavior.behaviorBody == null) // We allow (become :same|nil args), which re-uses the old behavior
+            newBehavior.behaviorBody = this.behavior.behaviorBody;
+        this.behavior = newBehavior;
     }
 
-    public void enqueue(Actor sender, ISeq args) throws InterruptedException {
-        Message message = new Message(sender, this, args, LockingTransaction.getRunning());
+    public static void doEnqueue(Actor receiver, ISeq args) throws InterruptedException {
+        LockingTransaction tx = LockingTransaction.getRunning();
+        Message message = new Message(receiver, args, tx);
+        if (tx != null)
+            tx.sendMessage(message);
+        else
+            receiver.enqueue(message);
+    }
+
+    void enqueue(Message message) throws InterruptedException {
         inbox.enqueue(message);
     }
 

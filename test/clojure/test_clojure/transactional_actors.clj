@@ -91,7 +91,7 @@
 
 ; SUMMER: spawn in transaction
 ; If spawn is not reverted when a transaction is reverted, the new actor remainn active after a rollback.
-(deftest summer-spawn
+#_(deftest summer-spawn
   (testing "SUMMER - PROBLEM WITH SPAWN"
     (let [sum (ref 0)
           contentious-ref (ref 0)
@@ -126,7 +126,7 @@
 
 ; FLAGGER: become in transaction
 ; If become is not reverted when a transaction is reverted, the behavior is changed even after a rollback.
-(deftest flagger-become
+#_(deftest flagger-become
   (testing "FLAGGER - PROBLEM WITH BECOME"
     (let [total 100
           one-flag-set? (ref false)

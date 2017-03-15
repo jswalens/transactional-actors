@@ -104,6 +104,9 @@ long startPoint;
 long startTime;
 final RetryEx retryex = new RetryEx();
 final ArrayList<Agent.Action> actions = new ArrayList<Agent.Action>();
+final ArrayList<Actor.Message> messages = new ArrayList<Actor.Message>();
+final ArrayList<Actor> spawned = new ArrayList<Actor>();
+Actor.Behavior nextBehavior = null; // possible become executed in tx
 final HashMap<Ref, Object> vals = new HashMap<Ref, Object>();
 final HashSet<Ref> sets = new HashSet<Ref>();
 final TreeMap<Ref, ArrayList<CFn>> commutes = new TreeMap<Ref, ArrayList<CFn>>();
@@ -366,7 +369,7 @@ Object run(Callable fn) throws Exception{
 			stop(done ? COMMITTED : RETRY);
 			try
 				{
-				if(done) //re-dispatch out of transaction
+				if(done) // This runs out of the transaction
 					{
 					for(Notify n : notify)
 						{
@@ -376,12 +379,27 @@ Object run(Callable fn) throws Exception{
 						{
 						Agent.dispatchAction(action);
 						}
+					for(Actor.Message message : messages)
+						{
+						message.receiver.enqueue(message);
+						}
+					for(Actor actor : spawned)
+						{
+						actor.start();
+						}
+					if(nextBehavior != null)
+						{
+						Actor.getEx().become(nextBehavior);
+						}
 					}
 				}
 			finally
 				{
 				notify.clear();
 				actions.clear();
+				messages.clear();
+				spawned.clear();
+				nextBehavior = null;
 				}
 			}
 		}
@@ -392,6 +410,18 @@ Object run(Callable fn) throws Exception{
 
 public void enqueue(Agent.Action action){
 	actions.add(action);
+}
+
+public void sendMessage(Actor.Message message) {
+	messages.add(message);
+}
+
+public void spawnActor(Actor actor) {
+	spawned.add(actor);
+}
+
+public void become(Actor.Behavior behavior) {
+	nextBehavior = behavior;
 }
 
 Object doGet(Ref ref){

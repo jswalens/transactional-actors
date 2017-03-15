@@ -2020,20 +2020,20 @@
   "Dispatch an action to an agent or a message to an actor.
   Returns the agent or actor immediately.
 
-  In case destination is an actor, the message is put in the actor's inbox.
+  In case receiver is an actor, the message is put in the actor's inbox.
 
-  In case destination is an agent, in a thread from a thread pool,
+  In case receiver is an agent, in a thread from a thread pool,
   the state of the agent will be set to the value of:
 
   (apply (first args) state-of-agent (rest args))"
   {:added "1.0"
    :static true}
-  [destination & args]
-  (if (instance? clojure.lang.Actor destination)
+  [receiver & args]
+  (if (instance? clojure.lang.Actor receiver)
     (do
-      (.enqueue ^clojure.lang.Actor destination *actor* args)
-      destination)
-    (apply send-via clojure.lang.Agent/pooledExecutor destination (first args) (rest args))))
+      (. clojure.lang.Actor doEnqueue receiver args)
+      receiver)
+    (apply send-via clojure.lang.Agent/pooledExecutor receiver (first args) (rest args))))
 
 (defn send-off
   "Dispatch a potentially blocking action to an agent. Returns the
@@ -2187,7 +2187,7 @@
    :static true}
   [behavior & args]
   (let [a (new clojure.lang.Actor behavior args)]
-    (.submit clojure.lang.Agent/soloExecutor ^Runnable a)
+    (.start a)
     a))
 
 (defn become
