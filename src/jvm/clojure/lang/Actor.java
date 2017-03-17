@@ -51,16 +51,16 @@ public class Actor implements Runnable {
     }
 
     static class Behavior {
-        IFn behaviorBody;
-        ISeq args; // arguments to pass to call to behaviorBody
+        IFn body;
+        ISeq args; // arguments to pass to call to body
 
-        public Behavior(IFn behaviorBody, ISeq args) {
-            this.behaviorBody = behaviorBody;
+        public Behavior(IFn body, ISeq args) {
+            this.body = body;
             this.args = args;
         }
 
         public IFn apply() {
-            return (IFn) behaviorBody.applyTo(args);
+            return (IFn) body.applyTo(args);
         }
     }
 
@@ -93,8 +93,8 @@ public class Actor implements Runnable {
 
     }
 
-    public Actor(IFn behaviorBody, ISeq args) {
-        behavior = new Behavior(behaviorBody, args);
+    public Actor(IFn behaviorBody, ISeq behaviorArgs) {
+        behavior = new Behavior(behaviorBody, behaviorArgs);
     }
 
     static Actor getRunning() {
@@ -112,8 +112,8 @@ public class Actor implements Runnable {
         return dependency != null;
     }
 
-    public static Actor doSpawn(IFn behaviorBody, ISeq args) {
-        Actor actor = new Actor(behaviorBody, args);
+    public static Actor doSpawn(IFn behaviorBody, ISeq behaviorArgs) {
+        Actor actor = new Actor(behaviorBody, behaviorArgs);
         Actor.start(actor); // might be delayed
         return actor;
     }
@@ -132,8 +132,8 @@ public class Actor implements Runnable {
             Agent.soloExecutor.submit(actor);
     }
 
-    public static void doBecome(IFn behaviorBody, ISeq args) {
-        Behavior behavior = new Behavior(behaviorBody, args);
+    public static void doBecome(IFn behaviorBody, ISeq behaviorArgs) {
+        Behavior behavior = new Behavior(behaviorBody, behaviorArgs);
         if (LockingTransaction.getRunning() != null)
             // tx running: only persist become in tx
             LockingTransaction.getEx().become(behavior);
@@ -145,8 +145,8 @@ public class Actor implements Runnable {
     void become(Behavior newBehavior) {
         // Note: this always runs in the current actor (we're never setting the behavior of an actor running in another
         // thread), as become is only called by doBecome on the current actor.
-        if (newBehavior.behaviorBody == null) // We allow (become :same|nil args), which re-uses the old behavior
-            newBehavior.behaviorBody = behavior.behaviorBody;
+        if (newBehavior.body == null) // We allow (become :same|nil args), which re-uses the old behavior
+            newBehavior.body = behavior.body;
         behavior = newBehavior;
     }
 
