@@ -65,8 +65,9 @@
 ; If send is not reverted when a transaction is reverted, its effects remain visible after a rollback.
 (deftest summer-send
   (testing "SUMMER - PROBLEM WITH SEND"
-    (let [contentious-ref (ref 0)
-          receiver
+    (let [n 100
+          contentious-ref (ref 0)
+          counter
           (behavior
             [i]
             [msg & args]
@@ -75,25 +76,31 @@
               (deliver (first args) i)
               :inc
               (become :same (inc i))))
-          receiver-actor (spawn receiver 0)
+          counter-actor (spawn counter 0)
           sender
           (behavior
             []
-            []
+            [p]
             (dosync
-              (send receiver-actor :inc)
-              (alter contentious-ref inc)))
-          senders (doall (repeatedly 100 #(spawn sender)))]
-      (is (= 100 (count senders)))
-      (doseq [s senders]
-        (send s))
-      (test-with-promise receiver-actor :get 100 1000))))
+              (send counter-actor :inc)
+              (alter contentious-ref inc))
+            ; only deliver after transaction committed
+            (deliver p true))
+          senders (doall (repeatedly n #(spawn sender)))
+          promises (repeatedly n promise)]
+      (dotimes [i n]
+        (send (nth senders i) (nth promises i)))
+      (doseq [p promises]
+        (is (deref p 1000 false)))
+      ; wait until all messages have been sent to counter-actor, :get will be in the queue after those
+      (test-with-promise counter-actor :get n 1000))))
 
 ; SUMMER: spawn in transaction
 ; If spawn is not reverted when a transaction is reverted, the new actor remainn active after a rollback.
-#_(deftest summer-spawn
+(deftest summer-spawn
   (testing "SUMMER - PROBLEM WITH SPAWN"
-    (let [sum (ref 0)
+    (let [n 100
+          sum (ref 0)
           contentious-ref (ref 0)
           counter
           (behavior
@@ -110,23 +117,26 @@
           spawner
           (behavior
             []
-            []
-            (dosync
-              (send (spawn counter 0) :inc)
-              (alter contentious-ref inc)))
-          spawners (doall (repeatedly 100 #(spawn spawner)))]
-      (is (= 100 (count spawners)))
-      (doseq [s spawners]
-        (send s))
-      (dotimes [i (count spawners)]
-        (let [s (nth spawners i)
-              timeout (if (= i 0) 1000 20)]
-          (test-with-promise s :get 1 timeout)))
+            [p]
+            (let [c (dosync
+                      (let [c (spawn counter 0)]
+                        (send c :inc)
+                        (alter contentious-ref inc)
+                        c))]
+              (deliver p c)))
+          spawners (doall (repeatedly n #(spawn spawner)))
+          promises (repeatedly n promise)]
+      (dotimes [i n]
+        (send (nth spawners i) (nth promises i)))
+      (doseq [p promises]
+        (let [c (deref p 1000 false)]
+          (is (not (false? c)))
+          (test-with-promise c :get 1 1000)))
       (is (= 100 @sum)))))
 
 ; FLAGGER: become in transaction
 ; If become is not reverted when a transaction is reverted, the behavior is changed even after a rollback.
-#_(deftest flagger-become
+(deftest flagger-become
   (testing "FLAGGER - PROBLEM WITH BECOME"
     (let [total 100
           one-flag-set? (ref false)
@@ -144,7 +154,6 @@
               :read-flag
               (deliver (first args) flag)))
           flaggers (doall (repeatedly total #(spawn flagger false)))]
-      (is (= total (count flaggers)))
       (doseq [f flaggers]
         (send f :set-flag))
       (let [flags (doall
