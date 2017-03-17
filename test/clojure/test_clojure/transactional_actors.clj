@@ -132,7 +132,7 @@
         (let [c (deref p 1000 false)]
           (is (not (false? c)))
           (test-with-promise c :get 1 1000)))
-      (is (= 100 @sum)))))
+      (is (= n @sum)))))
 
 ; FLAGGER: become in transaction
 ; If become is not reverted when a transaction is reverted, the behavior is changed even after a rollback.
