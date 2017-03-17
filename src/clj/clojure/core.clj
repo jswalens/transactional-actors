@@ -2185,10 +2185,8 @@
   "Spawn an actor with the behavior and args."
   {:added "1.8-transactional-actors"
    :static true}
-  [behavior & args]
-  (let [a (new clojure.lang.Actor behavior args)]
-    (.start a)
-    a))
+  [^clojure.lang.IFn behavior & args]
+  (. clojure.lang.Actor doSpawn behavior args))
 
 (defn become
   "In an actor, become a different behavior with args.
@@ -2197,7 +2195,7 @@
   with the new arguments."
   {:added "1.8-transactional-actors"
    :static true}
-  [behavior & args]
+  [^clojure.lang.IFn behavior & args]
   (let [behavior (if (= behavior :same) nil behavior)]
     (. clojure.lang.Actor doBecome behavior args)))
 

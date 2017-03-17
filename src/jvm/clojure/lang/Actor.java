@@ -12,12 +12,29 @@
 
 package clojure.lang;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingDeque;
 
 // TODO: garbage collection of actors
 public class Actor implements Runnable {
+
+    private static class AbortEx extends Exception{
+    }
+    private static final AbortEx abortex = new AbortEx();
+
+    static void abortIfDependencyAborted() throws AbortEx, InterruptedException {
+        Actor current = CURRENT_ACTOR.get();
+        if (current == null)
+            return;
+        if (!current.tentative())
+            return;
+        current.dependency.waitUntilFinished();
+        if (!current.dependency.committed())
+            throw Actor.abortex;
+    }
 
     static class Inbox {
         private final LinkedBlockingDeque<Message> q = new LinkedBlockingDeque<Message>();
@@ -55,16 +72,20 @@ public class Actor implements Runnable {
     private Behavior behavior;
     private final Inbox inbox = new Inbox();
 
+    private LockingTransaction.Info dependency = null;
+    private List<Actor> spawned = new ArrayList<Actor>();
+    private Behavior oldBehavior = null;
+
     static class Message {
         final Actor receiver;
         final ISeq args;
-        final LockingTransaction dependency; // can be null
+        final LockingTransaction.Info dependency; // can be null
 
         public Message(Actor receiver, ISeq args) {
             this(receiver, args, null);
         }
 
-        public Message(Actor receiver, ISeq args, LockingTransaction dependency) {
+        public Message(Actor receiver, ISeq args, LockingTransaction.Info dependency) {
             this.receiver = receiver;
             this.args = args;
             this.dependency = dependency;
@@ -87,20 +108,37 @@ public class Actor implements Runnable {
         return a;
     }
 
-    public void start() {
-        LockingTransaction tx = LockingTransaction.getRunning();
-        if (tx != null)
-            tx.spawnActor(this);
+    public boolean tentative() {
+        return dependency != null;
+    }
+
+    public static Actor doSpawn(IFn behaviorBody, ISeq args) {
+        Actor actor = new Actor(behaviorBody, args);
+        Actor.start(actor); // might be delayed
+        return actor;
+    }
+
+    public static void start(Actor actor) {
+        // TODO: what if transaction committed successfully (so dependency committed): now we still add to spawned (2nd
+        // case), but we could immediately execute (how does this affect the order?).
+        if (LockingTransaction.getRunning() != null)
+            // tx running: keep in tx
+            LockingTransaction.getEx().spawnActor(actor);
+        else if (CURRENT_ACTOR.get() != null && CURRENT_ACTOR.get().tentative())
+            // no tx running, but tentative turn: keep in actor
+            CURRENT_ACTOR.get().spawned.add(actor);
         else
-            Agent.soloExecutor.submit(this);
+            // else: do immediately
+            Agent.soloExecutor.submit(actor);
     }
 
     public static void doBecome(IFn behaviorBody, ISeq args) {
         Behavior behavior = new Behavior(behaviorBody, args);
-        LockingTransaction tx = LockingTransaction.getRunning();
-        if (tx != null)
-            tx.become(behavior);
+        if (LockingTransaction.getRunning() != null)
+            // tx running: only persist become in tx
+            LockingTransaction.getEx().become(behavior);
         else
+            // else: become in actor
             Actor.getEx().become(behavior);
     }
 
@@ -108,20 +146,24 @@ public class Actor implements Runnable {
         // Note: this always runs in the current actor (we're never setting the behavior of an actor running in another
         // thread), as become is only called by doBecome on the current actor.
         if (newBehavior.behaviorBody == null) // We allow (become :same|nil args), which re-uses the old behavior
-            newBehavior.behaviorBody = this.behavior.behaviorBody;
-        this.behavior = newBehavior;
+            newBehavior.behaviorBody = behavior.behaviorBody;
+        behavior = newBehavior;
     }
 
     public static void doEnqueue(Actor receiver, ISeq args) throws InterruptedException {
-        LockingTransaction tx = LockingTransaction.getRunning();
-        Message message = new Message(receiver, args, tx);
-        if (tx != null)
-            tx.sendMessage(message);
-        else
-            receiver.enqueue(message);
+        LockingTransaction.Info dependency = null;
+        if (LockingTransaction.getRunning() != null)
+            // tx running: tx = dependency
+            dependency = LockingTransaction.getEx().info;
+        else if (getRunning() != null && getRunning().tentative())
+            // no tx running, but tentative turn: transitive dependency
+            dependency = getRunning().dependency;
+        // else: no dependency
+        Message message = new Message(receiver, args, dependency);
+        receiver.enqueue(message);
     }
 
-    void enqueue(Message message) throws InterruptedException {
+    private void enqueue(Message message) throws InterruptedException {
         inbox.enqueue(message);
     }
 
@@ -136,18 +178,38 @@ public class Actor implements Runnable {
 
         try {
             while (true) {
-                // TODO: end actor when it is no longer needed (garbage collection of actors)
-                Message message;
                 try {
-                    message = inbox.take();
-                } catch (InterruptedException ex) {
-                    return;
+                    // TODO: end actor when it is no longer needed (garbage collection of actors)
+                    Message message = inbox.take();
+
+                    // If message has a dependency, this is a tentative turn
+                    if (message.dependency != null) {
+                        dependency = message.dependency;
+                        oldBehavior = behavior;
+                    }
+
+                    // TODO: graceful error handling. Currently, if an exception is thrown we don't handle it, it simply
+                    // aborts the actor. See error handling in Agent for a better solution.
+                    behavior.apply().applyTo(message.args);
+
+                    abortIfDependencyAborted();
+
+                    dependency = null;
+                    for (Actor actor : spawned) {
+                        Actor.start(actor);
+                    }
+                } catch (AbortEx e) {
+                    behavior = oldBehavior;
+                } finally {
+                    dependency = null;
+                    oldBehavior = null;
+                    spawned.clear();
                 }
-                // TODO: graceful error handling. Currently, if an exception is thrown we don't handle it, it simply
-                // aborts the actor. See error handling in Agent for a better solution.
-                behavior.apply().applyTo(message.args);
+
             }
-        } finally {
+    } catch (InterruptedException ex) {
+            // interrupt thread
+    } finally {
             Var.popThreadBindings();
         }
     }

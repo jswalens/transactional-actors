@@ -58,6 +58,14 @@ public static class Info{
 		int s = status.get();
 		return s == RUNNING || s == COMMITTING;
 	}
+
+	public boolean committed(){
+		return status.get() == COMMITTED;
+	}
+
+	public void waitUntilFinished() throws InterruptedException {
+		latch.await();
+	}
 }
 
 static class CFn{
@@ -104,7 +112,6 @@ long startPoint;
 long startTime;
 final RetryEx retryex = new RetryEx();
 final ArrayList<Agent.Action> actions = new ArrayList<Agent.Action>();
-final ArrayList<Actor.Message> messages = new ArrayList<Actor.Message>();
 final ArrayList<Actor> spawned = new ArrayList<Actor>();
 Actor.Behavior nextBehavior = null; // possible become executed in tx
 final HashMap<Ref, Object> vals = new HashMap<Ref, Object>();
@@ -274,6 +281,7 @@ Object run(Callable fn) throws Exception{
 				}
 			info = new Info(RUNNING, startPoint);
 			ret = fn.call();
+			Actor.abortIfDependencyAborted(); // if we have a dependency, only commit after dependency committed
 			//make sure no one has killed us before this point, and can't from now on
 			if(info.status.compareAndSet(RUNNING, COMMITTING))
 				{
@@ -379,13 +387,9 @@ Object run(Callable fn) throws Exception{
 						{
 						Agent.dispatchAction(action);
 						}
-					for(Actor.Message message : messages)
-						{
-						message.receiver.enqueue(message);
-						}
 					for(Actor actor : spawned)
 						{
-						actor.start();
+						Actor.start(actor); // TODO: doesn't actually start them, just adds them to the turn's list
 						}
 					if(nextBehavior != null)
 						{
@@ -397,7 +401,6 @@ Object run(Callable fn) throws Exception{
 				{
 				notify.clear();
 				actions.clear();
-				messages.clear();
 				spawned.clear();
 				nextBehavior = null;
 				}
@@ -410,10 +413,6 @@ Object run(Callable fn) throws Exception{
 
 public void enqueue(Agent.Action action){
 	actions.add(action);
-}
-
-public void sendMessage(Actor.Message message) {
-	messages.add(message);
 }
 
 public void spawnActor(Actor actor) {
