@@ -150,7 +150,7 @@
                 (when-not @one-flag-set?
                   (become :same true)
                   (ref-set one-flag-set? true)))
-                ; else: flag stays false, one-flag-set? stays true
+              ; else: flag stays false, one-flag-set? stays true
               :read-flag
               (deliver (first args) flag)))
           flaggers (doall (repeatedly total #(spawn flagger false)))]
@@ -168,7 +168,7 @@
             f (count (filter false? flags))
             n (count (filter nil? flags))]
         ;(log "flags at the end:" flags)
-        (log "true:" t "/" c "- false:" f "/" c  "- nil:" n "/" c)
+        (log "true:" t "/" c "- false:" f "/" c "- nil:" n "/" c)
         (is (= total c))
         (is (= 1 t))
         (is (= (- total 1) f))
