@@ -21,7 +21,7 @@ import java.util.concurrent.LinkedBlockingDeque;
 // TODO: garbage collection of actors
 public class Actor implements Runnable {
 
-    private static class AbortEx extends Exception{
+    private static class AbortEx extends Error{
     }
     private static final AbortEx abortex = new AbortEx();
 
@@ -188,9 +188,15 @@ public class Actor implements Runnable {
                         oldBehavior = behavior;
                     }
 
-                    // TODO: graceful error handling. Currently, if an exception is thrown we don't handle it, it simply
-                    // aborts the actor. See error handling in Agent for a better solution.
-                    behavior.apply().applyTo(message.args);
+                    try {
+                        behavior.apply().applyTo(message.args);
+                    } catch (AbortEx e) {
+                        throw e;
+                        // Below, catch everything except AbortEx
+                    } catch (Throwable e) {
+                        // TODO: graceful error handling. See error handling in Agent for a better solution.
+                        System.out.println("uncaught exception in actor: " + e.getMessage());
+                    }
 
                     abortIfDependencyAborted();
 
