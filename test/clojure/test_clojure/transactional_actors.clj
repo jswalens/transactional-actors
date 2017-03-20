@@ -22,6 +22,14 @@
     (send actor msg p)
     (is (= (deref p timeout false) expected))))
 
+(defn- send-promises-and-wait [senders]
+  (let [n (count senders)
+        promises (repeatedly n promise)]
+    (dotimes [i n]
+      (send (nth senders i) (nth promises i)))
+    (doseq [p promises]
+      (is (deref p 500 false)))))
+
 ; COUNTER: uses transactions
 ; Does not require special changes for the combination of actors and transactions.
 (deftest counter
@@ -88,10 +96,7 @@
             (deliver p true))
           senders (doall (repeatedly n #(spawn sender)))
           promises (repeatedly n promise)]
-      (dotimes [i n]
-        (send (nth senders i) (nth promises i)))
-      (doseq [p promises]
-        (is (deref p 1000 false)))
+      (send-promises-and-wait senders)
       ; wait until all messages have been sent to counter-actor, :get will be in the queue after those
       (test-with-promise counter-actor :get n 1000))))
 
@@ -173,3 +178,196 @@
         (is (= 1 t))
         (is (= (- total 1) f))
         (is (= 0 n))))))
+
+(deftest tx-to-non-tx
+  "Send from transaction. Receiver contains no transaction."
+  (let [n 100
+        n-send (ref 0)                                      ; contentious
+        sender (behavior
+                 [rcv]
+                 [p]
+                 (dosync
+                   (send rcv :inc)
+                   (alter n-send inc))
+                 (deliver p true))
+        receiver (behavior
+                   [i]
+                   [msg & args]
+                   (case msg
+                     :inc
+                     (become :same (inc i))
+                     :get
+                     (deliver (first args) i)))
+        receivers (doall (repeatedly n #(spawn receiver 0)))
+        senders (doall (map #(spawn sender %) receivers))]
+    (send-promises-and-wait senders)
+    (is (= n @n-send))
+    (doseq [r receivers]
+      (test-with-promise r :get 1 100))))
+
+(deftest tx-to-tx
+  "Send from transaction. Receiver contains transaction."
+  (let [n 100
+        n-send (ref 0)                                      ; contentious
+        n-receive (ref 0)                                   ; contentious
+        sender (behavior
+                 [rcv]
+                 [p]
+                 (dosync
+                   (send rcv :inc p)
+                   (alter n-send inc)))
+        receiver (behavior
+                   []
+                   [msg p]
+                   (dosync
+                     (alter n-receive inc))
+                   (deliver p true))
+        receivers (doall (repeatedly n #(spawn receiver)))
+        senders (doall (map #(spawn sender %) receivers))]
+    (send-promises-and-wait senders)
+    (is (= n @n-send))
+    (is (= n @n-receive))))
+
+(deftest tx-to-two-tx
+  "Send from transaction. Receiver contains multiple transactions."
+  (let [n 100
+        n-send (ref 0)                                      ; contentious
+        n-receive (ref 0)                                   ; contentious
+        sender (behavior
+                 [rcv]
+                 [p]
+                 (dosync
+                   (send rcv :inc p)
+                   (alter n-send inc)))
+        receiver (behavior
+                   []
+                   [msg p]
+                   (dosync
+                     (alter n-receive inc))
+                   (dosync
+                     (alter n-receive inc))
+                   (deliver p true))
+        receivers (doall (repeatedly n #(spawn receiver)))
+        senders (doall (map #(spawn sender %) receivers))]
+    (send-promises-and-wait senders)
+    (is (= n @n-send))
+    (is (= (* 2 n) @n-receive))))
+
+(deftest two-tx-to-non-tx
+  "Send from and outside transaction. Receiver contains no transaction."
+  (let [n 100
+        n-send (ref 0)                                      ; contentious
+        sender (behavior
+                 [rcv]
+                 [p]
+                 (send rcv :inc)
+                 (dosync
+                   (send rcv :inc)
+                   (alter n-send inc))
+                 (send rcv :inc)
+                 (dosync
+                   (send rcv :inc)
+                   (alter n-send inc))
+                 (send rcv :inc)
+                 (deliver p true))
+        receiver (behavior
+                   [i]
+                   [msg & args]
+                   (case msg
+                     :inc
+                     (become :same (inc i))
+                     :get
+                     (deliver (first args) i)))
+        receivers (doall (repeatedly n #(spawn receiver 0)))
+        senders (doall (map #(spawn sender %) receivers))]
+    (send-promises-and-wait senders)
+    (is (= (* 2 n) @n-send))
+    (doseq [r receivers]
+      (test-with-promise r :get 5 100))))
+
+(deftest tx-to-tx-to-tx
+  "Tx -> tx -> tx"
+  (let [n 100
+        n-first (ref 0)                                     ; contentious
+        n-second (ref 0)                                    ; contentious
+        n-third (ref 0)                                     ; contentious
+        first_ (behavior
+                 [i second]
+                 [p]
+                 (dosync
+                   (send second :inc p)
+                   (alter n-first inc)
+                   (become :same (inc i) second)))
+        second (behavior
+                 [i third]
+                 [msg p]
+                 (dosync
+                   (send third :inc p)
+                   (alter n-second inc)
+                   (become :same (inc i) third)))
+        third (behavior
+                [i]
+                [msg & args]
+                (case msg
+                  :inc
+                  (do
+                    (dosync
+                      (alter n-third inc)
+                      (become :same (inc i)))
+                    (deliver (first args) true))
+                  :get
+                  (deliver (first args) i)))
+        thirds (doall (repeatedly n #(spawn third 0)))
+        seconds (doall (map #(spawn second 0 %) thirds))
+        firsts (doall (map #(spawn first_ 0 %) seconds))]
+    (send-promises-and-wait firsts)
+    (is (= n @n-first))
+    (is (= n @n-second))
+    (is (= n @n-third))
+    (doseq [t thirds]
+      (test-with-promise t :get 1 100))))
+
+(deftest tx-to-non-tx-to-tx
+  "Tx -> non-tx -> tx"
+  (let [n 100
+        n-first (ref 0)                                     ; contentious
+        n-second (ref 0)                                    ; contentious
+        n-third (ref 0)                                     ; contentious
+        first_ (behavior
+                 [i second]
+                 [p]
+                 (dosync
+                   (send second :inc)
+                   (alter n-first inc)
+                   (become :same (inc i) second))
+                 (deliver p true))
+        second (behavior
+                 [i third]
+                 [msg & args]
+                 (case msg
+                   :inc
+                   (do
+                     (send third :inc)
+                     (become :same (inc i) third))
+                   :get
+                   (deliver (first args) i)))
+        third (behavior
+                [i]
+                [msg & args]
+                (case msg
+                  :inc
+                  (dosync
+                    (alter n-third inc)
+                    (become :same (inc i)))
+                  :get
+                  (deliver (first args) i)))
+        thirds (doall (repeatedly n #(spawn third 0)))
+        seconds (doall (map #(spawn second 0 %) thirds))
+        firsts (doall (map #(spawn first_ 0 %) seconds))]
+    (send-promises-and-wait firsts)
+    (is (= n @n-first))
+    (doseq [s seconds]
+      (test-with-promise s :get 1 1000))
+    (is (= n @n-third))
+    (doseq [t thirds]
+      (test-with-promise t :get 1 100))))
