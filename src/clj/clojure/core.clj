@@ -2179,7 +2179,7 @@
   "Create behavior. A behavior consists of parameters to the behavior, parameters included in the message, and a body."
   {:added "1.8-transactional-actors"}
   [behavior-pars message-pars & body]
-  `(fn ~behavior-pars (fn ~message-pars ~@body)))
+  `(#'clojure.core/binding-conveyor-fn (fn ~behavior-pars (fn ~message-pars ~@body))))
 
 (defn spawn
   "Spawn an actor with the behavior and args."
