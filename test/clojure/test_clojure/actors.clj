@@ -99,3 +99,20 @@
     (is (deref p1 5000 false) "*actor* should refer to the current actor")
     (send act act p2)
     (is (deref p1 5000 false) "*actor* should refer to the current actor, even after become")))
+
+(def ^:dynamic dynamic-var 1)
+
+(defn create-behavior-with-dynamic-var []
+  (behavior [] [p]
+            (deliver p dynamic-var)))
+
+(deftest binding-conveyor-test
+  (let [beh1 (create-behavior-with-dynamic-var)]
+    (binding [dynamic-var 2]
+      (let [beh2 (create-behavior-with-dynamic-var)
+            p1   (promise)
+            p2   (promise)]
+        (send (spawn beh1) p1)
+        (send (spawn beh2) p2)
+        (is (= (deref p1 1000 false) 1))
+        (is (= (deref p2 1000 false) 2))))))
