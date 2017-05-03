@@ -170,11 +170,10 @@ public class Actor implements Runnable {
     public void run() {
         CURRENT_ACTOR.set(this);
 
-        // Bind *actor* to this
+        // Create bindings map that binds *actor* to this. Used below.
         Map<Var, Object> m = new HashMap<Var, Object>();
         m.put(RT.ACTOR, this);
         IPersistentMap bindings = PersistentArrayMap.create(m);
-        Var.pushThreadBindings(bindings);
 
         try {
             while (true) {
@@ -189,7 +188,15 @@ public class Actor implements Runnable {
                     }
 
                     try {
-                        behavior.apply().applyTo(message.args);
+                        IFn behaviorInstance = (IFn) behavior.apply();
+
+                        // Bind *actor* to this
+                        // Note: the behavior is encapsulated in a "binding-conveyor", hence, the first action when
+                        // creating the behaviorInstance above is resetting its frame to the bindings that were present
+                        // when the behavior was defined. Here, we extend those bindings with one for *actor*.
+                        Var.pushThreadBindings(bindings);
+
+                        behaviorInstance.applyTo(message.args);
                     } catch (AbortEx e) {
                         throw e;
                         // Below, catch everything except AbortEx
@@ -211,7 +218,6 @@ public class Actor implements Runnable {
                     oldBehavior = null;
                     spawned.clear();
                 }
-
             }
     } catch (InterruptedException ex) {
             // interrupt thread
